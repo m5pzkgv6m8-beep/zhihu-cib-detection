@@ -43,6 +43,23 @@ node scripts/collect.mjs "目标账号名或token" --out evidence.json
 
 采集需要 20–60 次浏览器请求，耗时约 2–5 分钟。默认每次请求间隔 1.2s，**不要调低**（关注/粉丝列表最容易触发风控）。
 
+### Phase 0.5 · 证据保全（强烈建议）
+
+```bash
+node scripts/snapshot.mjs --from evidence.json --out evidence/batch-1
+```
+
+把页面**当时长什么样**截图落盘，并生成带 SHA-256 的清单。日后核验是否被改动：
+
+```bash
+node scripts/snapshot.mjs --verify evidence/batch-1
+```
+
+**边界（必须理解）**：截图只证明「某一时刻页面渲染成这样」，**不能证明内容真实**——页面可被编辑、删除，评论数也会变。
+证据力来自 **截图 + API 原始 JSON + 采集时间戳 + SHA-256** 四者的组合，缺一不可。
+
+知乎是懒加载的：全页截图只覆盖已渲染部分，超长回答不会全部进入截图。关键结论仍应以 API 原始数据为准，截图用于固定当时的呈现状态。
+
 ### Phase 1 · 目标画像
 
 看 `target.profile`：粉丝数、回答数、总赞同、bio、IP 属地。

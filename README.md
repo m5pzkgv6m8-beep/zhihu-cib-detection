@@ -44,7 +44,11 @@ node scripts/login.mjs --cookie "z_c0=...; __zse_ck=..."
 # 3. 采集证据包
 node scripts/collect.mjs "某账号名或url_token" --out evidence.json
 
-# 4. 出研判报告（对外发布务必加 --anonymize）
+# 4. 截图保全（强烈建议：固定页面当时的呈现状态，可日后核验）
+node scripts/snapshot.mjs --from evidence.json --out evidence/batch-1
+node scripts/snapshot.mjs --verify evidence/batch-1
+
+# 5. 出研判报告（对外发布务必加 --anonymize）
 node scripts/analyze.mjs evidence.json --anonymize --out report.md
 ```
 
@@ -117,7 +121,9 @@ claude mcp add anti-scrape -- node /绝对路径/naoshi/mcp/dist/index.js
 │   ├── evidence.md           # 证据链格式、置信度分级、合规边界
 │   └── case-study.md         # 完整匿名化案例
 ├── scripts/
+│   ├── login.mjs             # 导入知乎 cookie 并自检登录态
 │   ├── collect.mjs           # 采集证据包
+│   ├── snapshot.mjs          # 截图保全 + SHA-256 清单（可 --verify 核验）
 │   ├── analyze.mjs           # 计算信号、出报告
 │   └── mcp-client.mjs        # 可复用的 MCP stdio 客户端
 └── mcp/                      # anti-scrape-mcp（Playwright + 知乎 v4 API 封装）
