@@ -150,10 +150,10 @@
 
 ### 1. 知乎有两套用户 ID
 
-| 来源 | 黄彦臻的标识 |
+| 来源 | 同一账号的两套标识 |
 | --- | --- |
-| 回答正文里的 `@` 链接 | `57fcf79614feeea015b395a3022bd10f`（32 位内部 hash） |
-| v4 API 的 `author.url_token` / 关注列表 | `huang-wei-yan-30`（自定义 token） |
+| 回答正文里的 `@` 链接 | `0123456789abcdef0123456789abcdef`（32 位内部 hash） |
+| v4 API 的 `author.url_token` / 关注列表 | `example-user-30`（自定义 token） |
 
 正文 @ 提及用的是 hash，关注图用的是 token，**两者无法直接 join**。
 `/api/v4/members/<hash>` 与 `/api/v4/members/<token>` 都能解析，返回对象同时含

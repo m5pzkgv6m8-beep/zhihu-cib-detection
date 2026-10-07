@@ -13,6 +13,11 @@ const { opts, pos } = parseArgs(process.argv.slice(2));
 const FILE = pos[0] || "evidence.json";
 const ANON = Boolean(opts.anonymize);
 const OUT = typeof opts.out === "string" ? opts.out : null;
+// --redact "词A,词B"：匿名化时额外打码的词（例如只出现在问题标题里的第三方昵称）
+const REDACT =
+  typeof opts.redact === "string"
+    ? opts.redact.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
 
 const ev = JSON.parse(await readFile(FILE, "utf-8"));
 
@@ -61,6 +66,7 @@ collectNames();
 const scrub = (s) => {
   let out = String(s ?? "");
   if (!ANON) return out;
+  for (const r of REDACT) out = out.split(r).join("某账号");
   const keys = [...nameMap.keys()].sort((a, b) => b.length - a.length);
   for (const k of keys) {
     if (k && k.length >= 2) out = out.split(k).join(nameMap.get(k));
