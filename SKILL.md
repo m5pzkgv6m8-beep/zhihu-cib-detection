@@ -1,0 +1,145 @@
+---
+name: zhihu-cib-detection
+description: Detect coordinated inauthentic behavior (CIB) on Zhihu - alt-account networks ("小号") that funnel attention to a target account, cheerlead in comment sections, astroturf recommendations, or boost each other's posts. Use this whenever the user asks whether a Zhihu account is being artificially promoted, whether 小号 are driving traffic to a 大号, whether a batch of recommendations is organic or coordinated, or mentions 引流/刷赞/水军/抱团/养号/股托/矩阵号/CIB. Also use it to collect Zhihu account profiles, follow graphs, activity timelines, comment sections, or full answer bodies for investigative analysis, even if the user does not name a specific detection technique.
+license: MIT
+---
+
+# 知乎协同行为（CIB）检测
+
+用本地 `anti-scrape-mcp` 采集知乎**公开**数据，识别「小号抬大号」式的协同非真实行为：
+多账号抱团推荐同一目标、评论区捧场、错峰占位、固定话术模板、互关成团、目标本人下场互动。
+
+## 核心原则（先读这一节）
+
+1. **只分析公开数据**。点赞者身份、私信、资金流平台不公开，因此永远无法证明「同一人操作」或「收钱」。能给出的最强结论是**协同行为**，不是**动机**。
+2. **结论 = 疑似度 + 证据链**，不是定论。输出必须包含原始链接、时间戳、命中规则，供人工复核。
+3. **不要公开点名指控**。对外发布前必须匿名化（`analyze.mjs --anonymize` 可自动处理）。基于间接证据点名真实账号，在多数法域下有名誉权风险。
+4. **单信号不定性**。任何单一信号（时间聚集、IP 同省、互关）都会大量误报，必须多信号交叉。
+5. **先固定证据快照再分析**。回答会删、昵称会改、粉丝数会变。先把原始数据落盘再下结论。
+
+## 环境准备
+
+```bash
+cd mcp && npm install && npx playwright install chromium && npm run build
+```
+
+登录态存在 `mcp/cookies/zhihu.json`。先自检：
+
+```bash
+node scripts/collect.mjs --session
+```
+
+返回「知乎登录态有效，当前账号：xxx」才可继续。失效时用 MCP 的 `manage_cookies` 工具重新导入（需含 `z_c0` / `zse_ck`）。
+
+## 工作流
+
+### Phase 0 · 采集
+
+```bash
+node scripts/collect.mjs "目标账号名或token" --out evidence.json
+```
+
+产出 `evidence.json`，内含：目标画像、目标动态时间线、**全站提及目标的内容**、高频提及者的画像/关注图/动态、重点帖子的评论区。
+
+采集需要 20–60 次浏览器请求，耗时约 2–5 分钟。默认每次请求间隔 1.2s，**不要调低**（关注/粉丝列表最容易触发风控）。
+
+### Phase 1 · 目标画像
+
+看 `target.profile`：粉丝数、回答数、总赞同、bio、IP 属地。
+
+关键：**bio 里有没有变现出口**（公众号/微信/知识星球/付费群）。有变现出口的账号才有被引流的动机。
+
+### Phase 2 · 提及面扫描（找协同账号的关键一步）
+
+`mentions` 是搜索全站后「提到目标」的内容，按作者聚合。这一步把"谁在推这个账号"变成可枚举的名单。
+
+判读要点：
+
+- **提及次数高度集中** → 少数账号反复推荐，是协同的第一特征
+- 对比目标与其他被推荐账号的提及次数（例如名单里有 3 个人，目标被提及 23 次、其余 9 次和 3 次）→ **被提及最多的那个才是真正的目标**
+- **信用锚**：名单里如果有粉丝量大、bio 明确写「没有公众号/没有微信」不变现的账号，它通常是被拿来背书的，不是目标
+
+### Phase 3 · 内容半径
+
+看 `promoters[].activity`。对每个高频提及者，计算其动态里「推荐类」内容占比。
+
+典型模式：**老账号长期沉默 → 某日起内容半径突然塌缩到「推荐谁值得关注」**。这是养号/买号转推荐号的标志。
+
+同时看首条推荐内容的时间：多个账号是否在相近时间点集体转向。
+
+### Phase 4 · 关系与时间结构
+
+- **互关/单向关注**：`promoters[].followees` 里有没有目标、有没有彼此。单向关注（A 关注 B，B 不关注 A）说明存在主从关系
+- **共现**：多个账号是否反复回答**同一批问题**。错峰覆盖同一批「谁值得关注」问题 = 接力占位
+- **单日爆发**：同一账号一天内在多个同类问题下发帖
+- **IP 同地**：辅助信号，单独不构成证据
+
+### Phase 5 · 评论区
+
+评论区是捧场行为最直接的证据来源：
+
+- 是否存在 **`良心推荐` / `已关注` / `支持`** 这类模板化捧场语
+- 是否有账号**重复出现**在多个相关帖子的评论区
+- **目标账号本人是否出现在推荐自己的帖子评论区**，且与推荐者以熟人语气互动 ← 这是最强证据之一
+- 帖子作者的自我回复占比（大量自回复 = 维持评论区活跃）
+
+### Phase 6 · 打分与出报告
+
+```bash
+node scripts/analyze.mjs evidence.json --anonymize --out report.md
+```
+
+`--anonymize` 会把账号名替换为角色代号、token 哈希化，用于对外发布。本地研判时去掉该参数。
+
+## 判定规则
+
+**不要用单一阈值**。按信号族打分，多族同时命中才升级置信度：
+
+| 信号族 | 权重 | 说明 |
+| --- | --- | --- |
+| 内容半径塌缩 | 高 | 账号近期内容几乎全是推荐 |
+| 提及高度集中 | 高 | 少数账号贡献了大部分推荐 |
+| 同题共现 | 高 | 多账号错峰覆盖同一批问题 |
+| 评论区闭环 | 高 | 目标本人下场 + 熟人语气互动 |
+| 单向/互关成团 | 中 | 关注关系指向同一小圈 |
+| 单日/短窗爆发 | 中 | 同账号同日多帖 |
+| 固定话术模板 | 中 | 推荐名单与句式高度重复 |
+| IP 同地 | 低 | 辅助，单独无意义 |
+
+**置信度分级**：
+
+- **高**：≥3 个高权重信号族 + ≥1 个中权重族
+- **中**：2 个高权重族，或 1 高 + 2 中
+- **低**：仅时间/IP/互关类弱信号
+
+报告必须写清「无法判定的部分」。**永远不要把置信度写成 100%。**
+
+## 常见误报（必须逐条排除）
+
+- **热点涌入**：一个大 V 的爆款回答会引来自然发帖潮，时间聚集 ≠ 协同。要看是否**立场一致 + 账号低权重 + 指向同一目标**
+- **正常互推**：KOL 之间互相推荐很常见，尤其是同领域大 V
+- **粉丝自发安利**：真实粉丝会推荐喜欢的博主。区别在于**是否只围绕单一目标活动**、是否有**闭环互动**
+- **合法机构矩阵**：券商/基金公司的官方矩阵号是合规的。用 `is_org` / 认证字段区分
+- **搜索接口偏差**：搜索每次查询有上限且按相关度排序，提及次数是**近似值**，不是全量统计。报告中要注明
+
+## 工具与参考资料
+
+- `references/tools.md` — 12 个 MCP 工具的参数、返回结构，以及**三个必须知道的坑**（两套用户 ID、赞同数缺失、`is_author` 语义）
+- `references/methodology.md` — 信号的计算方式、判定逻辑、报告结构
+- `references/evidence.md` — 证据链格式、置信度分级、合规与伦理边界
+- `references/case-study.md` — 一个完整的匿名化案例（含真实数据形态与判读过程）
+
+## 脚本
+
+| 脚本 | 用途 |
+| --- | --- |
+| `scripts/collect.mjs` | 采集证据包 `evidence.json`；`--session` 自检登录态 |
+| `scripts/analyze.mjs` | 从证据包计算信号并输出报告；`--anonymize` 匿名化 |
+| `scripts/mcp-client.mjs` | 复用给自定义分析的 MCP stdio 客户端 |
+
+## 合规红线
+
+- 只抓公开页面，保持请求间隔 ≥1.2s
+- 结论仅供内部研判与人工复核，**不得用于骚扰、人肉、公开点名**
+- 涉及个人信息处理时遵守当地法律（如《个人信息保护法》）；自动化决策需保留人工复核环节
+- 遵守目标平台的用户协议与 robots 规则

@@ -1,0 +1,28 @@
+{
+  "name": "anti-scrape-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for fetching content from anti-scraping websites using Playwright",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "anti-scrape-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "playwright": "^1.52.0",
+    "turndown": "^7.2.0",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "@types/turndown": "^5.0.5",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

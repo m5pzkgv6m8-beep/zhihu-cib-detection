@@ -1,0 +1,23 @@
+# 依赖与构建产物
+node_modules/
+mcp/dist/
+
+# 登录态 —— 绝对不要提交
+mcp/cookies/
+*.cookie
+cookies/
+
+# 采集产物（含个人信息，绝不提交）
+evidence/
+evidence*.json
+report*.md
+# 但匿名化示例报告要随仓库发布
+!examples/report.sample.md
+!references/case-study.md
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log

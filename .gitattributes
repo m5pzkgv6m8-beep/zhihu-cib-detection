@@ -1,0 +1,6 @@
+# 统一为 LF，避免跨平台协作时行尾反复变动
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
