@@ -84,12 +84,11 @@ export function parseArgs(argv) {
     if (a.startsWith("--")) {
       const k = a.slice(2);
       const next = argv[i + 1];
-      if (next !== undefined && !next.startsWith("--")) {
-        opts[k] = next;
-        i++;
-      } else {
-        opts[k] = true;
-      }
+      const val = next !== undefined && !next.startsWith("--") ? (i++, next) : true;
+      // 同名参数可重复（如 --query a --query b），收集为数组
+      if (opts[k] === undefined) opts[k] = val;
+      else if (Array.isArray(opts[k])) opts[k].push(val);
+      else opts[k] = [opts[k], val];
     } else {
       pos.push(a);
     }

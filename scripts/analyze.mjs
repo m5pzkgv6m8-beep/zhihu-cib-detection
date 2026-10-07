@@ -295,9 +295,19 @@ s3.detail = pairs.length
 const high = families.filter((f) => f.weight === "high" && f.hit).length;
 const mid = families.filter((f) => f.weight === "mid" && f.hit).length;
 const low = families.filter((f) => f.weight === "low" && f.hit).length;
+
+// 分散度闸门：协同推广的前提是「少数账号垄断提及」。
+// 若提及高度分散（Top3 占比低 + 大量账号只提 1 次），说明这是社区自然讨论——
+// 垂直领域里活跃用户天然会在同一批问题下反复出现，同题共现与时间爆发都不足以证明协同。
+const singleMention = byAuthor.filter((a) => a.count === 1).length;
+const diffuse =
+  concentration < 0.3 && byAuthor.length >= 10 && singleMention / byAuthor.length > 0.6;
+
 let confidence = "低";
-if (high >= 3 && mid >= 1) confidence = "高";
-else if (high >= 2 || (high >= 1 && mid >= 2)) confidence = "中";
+if (!diffuse) {
+  if (high >= 3 && mid >= 1) confidence = "高";
+  else if (high >= 2 || (high >= 1 && mid >= 2)) confidence = "中";
+}
 
 // ---------- 报告 ----------
 const L = [];
@@ -330,15 +340,37 @@ L.push(
     (target.follower_count ?? "?") +
     " 粉丝 / " +
     (target.answer_count ?? "?") +
-    " 回答）被 " +
-    promoters.length +
-    " 个账号集中提及，共命中 " +
+    " 回答）：共命中 " +
     mentionItems.length +
-    " 条提及内容。"
+    " 条提及内容，涉及 " +
+    byAuthor.length +
+    " 个账号（其中 " +
+    promoters.length +
+    " 个做了深度画像）。"
 );
 L.push("");
 L.push("**这只能证明协同行为，不能证明动机。** 详见第六节。");
 L.push("");
+if (diffuse) {
+  L.push(
+    "> ⚠️ **提及高度分散**：Top3 仅占 " +
+      pct(concentration) +
+      "（" +
+      top3 +
+      "/" +
+      totalMentions +
+      "），" +
+      byAuthor.length +
+      " 个提及账号里有 " +
+      singleMention +
+      " 个只提及 1 次。"
+  );
+  L.push(
+    "> 判为**社区自然讨论**，置信度上限压到「低」。垂直领域里活跃用户天然会在同一批问题下反复出现，"
+  );
+  L.push("> 同题共现与时间爆发都会自然发生，**不足以证明协同**。需先有「少数账号垄断提及」这一前提。");
+  L.push("");
+}
 L.push("## 二、信号命中表");
 L.push("");
 L.push("| 信号 | 权重 | 命中 | 说明 |");

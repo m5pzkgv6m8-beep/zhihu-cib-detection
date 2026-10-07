@@ -4,7 +4,10 @@
 //   node scripts/collect.mjs --session
 //   node scripts/collect.mjs "<账号名或url_token>" [--out evidence.json]
 //        [--mentions 40] [--promoters 6] [--posts-per-promoter 2]
-//        [--comments-per-post 60] [--delay 1200]
+//        [--comments-per-post 60] [--activity 60] [--promoter-activity 60] [--delay 1200]
+//        [--query "消歧查询1"] [--query "消歧查询2"] ...
+//
+// 老账号（回答数上百）建议加大 --activity，否则看不到历史转型点。
 //
 // 只采集公开数据；请求间隔默认 1.2s，请勿调低（关注/粉丝列表最易触发风控）。
 import { writeFile } from "node:fs/promises";
@@ -19,6 +22,9 @@ const MENTIONS = num("mentions", 40);
 const TOP_PROMOTERS = num("promoters", 6);
 const POSTS_PER_PROMOTER = num("posts-per-promoter", 2);
 const COMMENTS_PER_POST = num("comments-per-post", 60);
+// 目标与提及者的动态条数：老账号需要拉长历史才能看到「转型时刻」
+const ACTIVITY = num("activity", 60);
+const PROMOTER_ACTIVITY = num("promoter-activity", 60);
 
 const log = (m) => console.error("[collect] " + m);
 
@@ -62,7 +68,7 @@ try {
   log("采集目标动态…");
   const act = await callJson(client, "zhihu_user_activity", {
     user: target.url_token,
-    count: 60,
+    count: ACTIVITY,
     format: "json",
   });
   await sleep(DELAY);
@@ -76,22 +82,53 @@ try {
   });
   await sleep(DELAY);
 
-  log("扫描全站提及（上限 " + MENTIONS + " 条，注意这是近似值）…");
-  const ms = await callJson(client, "zhihu_search", {
-    query: target.name,
-    type: "general",
-    max_count: MENTIONS,
-    format: "json",
-  });
+  // 目标名若是通用词（例：学科术语、日常常见词），直接搜名字会被无关内容淹没。
+  // 用 --query 指定消歧查询，可重复多次，结果合并去重。
+  const QUERIES = opts.query
+    ? Array.isArray(opts.query)
+      ? opts.query
+      : [opts.query]
+    : [target.name];
+  if (QUERIES.length === 1 && QUERIES[0] === target.name) {
+    notes.push(
+      "提及扫描用的是目标原名。若该名字是通用词/常见词，结果会混入大量无关内容，建议用 --query 指定消歧查询"
+    );
+  }
+  log("扫描全站提及（" + QUERIES.length + " 个查询，每个上限 " + MENTIONS + " 条）…");
+
+  const rawMentions = [];
+  for (const q of QUERIES) {
+    log("  查询：" + q);
+    const ms = await callJson(client, "zhihu_search", {
+      query: q,
+      type: "general",
+      max_count: MENTIONS,
+      format: "json",
+    });
+    // 采集期一旦限流/接口异常，搜索会静默返回空数组 —— 必须显式记录，
+    // 否则整个 Phase 2 白跑，还会被误读成「没人提及目标」。
+    if (ms.warnings && ms.warnings.length) {
+      for (const w of ms.warnings) notes.push("搜索告警[" + q + "]：" + w);
+      log("  !! 搜索告警：" + ms.warnings.join("；"));
+    }
+    for (const it of ms.items) rawMentions.push({ ...it, query: q });
+    await sleep(DELAY);
+  }
   notes.push(
     "搜索接口单次查询上限 " + MENTIONS + " 条且按相关度排序，提及次数为近似值而非全量"
   );
-  await sleep(DELAY);
 
-  const mentionItems = ms.items
-    .filter((i) => i.author && i.author_url_token)
+  const seenUrl = new Set();
+  const mentionItems = rawMentions
+    .filter((i) => {
+      if (!i.author || !i.author_url_token || !i.url) return false;
+      if (seenUrl.has(i.url)) return false; // 多个查询会命中同一条，去重
+      seenUrl.add(i.url);
+      return true;
+    })
     .map((i) => ({
       type: i.type,
+      query: i.query,
       date: i.created_time
         ? new Date(i.created_time * 1000).toISOString().slice(0, 10)
         : null,
@@ -125,6 +162,11 @@ try {
   }
   const byAuthor = [...byAuthorMap.values()].sort((a, b) => b.count - a.count);
   log("  → 命中 " + mentionItems.length + " 条，涉及 " + byAuthor.length + " 个账号");
+  if (mentionItems.length === 0) {
+    log("  !! 提及扫描返回 0 条：通常是采集期被限流或接口异常，");
+    log("  !! 请稍后重跑，不要据此断定「没有人提及目标」。");
+    notes.push("提及扫描返回 0 条，本次结果不可用，需重跑");
+  }
 
   // 排除目标自己
   const promoterSeeds = byAuthor
@@ -163,7 +205,7 @@ try {
       activity = (
         await callJson(client, "zhihu_user_activity", {
           user: seed.token,
-          count: 60,
+          count: PROMOTER_ACTIVITY,
           format: "json",
         })
       ).items.map((i) => ({
@@ -238,7 +280,15 @@ try {
       generated_at: new Date().toISOString(),
       tool: "zhihu-cib-detection / scripts/collect.mjs",
       target_input: targetInput,
-      params: { MENTIONS, TOP_PROMOTERS, POSTS_PER_PROMOTER, COMMENTS_PER_POST, DELAY },
+      params: {
+        MENTIONS,
+        TOP_PROMOTERS,
+        POSTS_PER_PROMOTER,
+        COMMENTS_PER_POST,
+        ACTIVITY,
+        PROMOTER_ACTIVITY,
+        DELAY,
+      },
       notes,
     },
     target: {

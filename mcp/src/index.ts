@@ -472,7 +472,7 @@ server.tool(
   "List a Zhihu user's answers and/or articles via the internal v4 API, with real upvote/comment counts, timestamps, and optional full body text as Markdown. Use it to profile an account's activity radius - e.g. whether it ever posts about anything other than one specific person.",
   {
     user: z.string().describe("Profile URL, url_token, @name, or 32-hex internal id"),
-    count: z.number().default(10).describe("Max items to return (default 10, hard cap 200)"),
+    count: z.number().default(10).describe("Max items to return (default 10, hard cap 1000)"),
     kind: z
       .enum(["all", "answers", "articles"])
       .default("all")
@@ -495,7 +495,7 @@ server.tool(
     const ctx = await getContext("zhihu");
     const page = await ctx.newPage();
     try {
-      const cap = Math.max(1, Math.min(Math.floor(count) || 10, 200));
+      const cap = Math.max(1, Math.min(Math.floor(count) || 10, 1000));
       let items: ZhihuActivityItem[] = [];
       const warnings: string[] = [];
       let totals: number | null = null;

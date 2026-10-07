@@ -211,23 +211,33 @@ export async function lookupMember(page: Page, input: string): Promise<MemberLoo
   }
 
   if (/[^\x00-\x7F]/.test(ident)) {
-    const found = await searchZhihu(page, ident, 5, "people", 0);
+    // 多取候选，避免真正的目标排在后面
+    const found = await searchZhihu(page, ident, 20, "people", 0);
     const candidates: ZhihuMember[] = [];
     for (const it of found.items) {
       if (it.type !== "people" || !it.url_token) continue;
       const m = await fetchMember(page, it.url_token);
       if (m) candidates.push(m);
     }
-    const exact = candidates.find((c) => c.name === ident) || candidates[0] || null;
+
+    const want = ident.trim();
+    const exact = candidates.find((c) => String(c.name).trim() === want);
     if (exact) {
       return { member: exact, resolvedFrom: "name_search", candidates, error: null };
     }
+
+    // 关键：不做「猜第一个」的降级。
+    // 知乎同名/近似名账号极多（实测：一个「XX2008」式昵称会同时匹配到多个同名号），
+    // 静默返回 candidates[0] 会把调查指向完全不相干的人。
     return {
       member: null,
       resolvedFrom: null,
       candidates,
       error:
-        "未找到账号「" + ident + "」，people 搜索命中 " + candidates.length + " 个候选",
+        "没有与「" + want + "」完全同名的账号，因此拒绝猜测。" +
+        "people 搜索返回 " + candidates.length + " 个近似候选：" +
+        candidates.slice(0, 8).map((c) => c.name + "(" + c.url_token + ")").join("、") +
+        "。请改用 url_token 精确指定目标。",
     };
   }
 
